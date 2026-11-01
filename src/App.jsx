@@ -154,6 +154,11 @@ export function App() {
   const [toast, setToast] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [movementCounts, setMovementCounts] = useState(EMPTY_COUNTS);
+  const roundRef = useRef(1);
+  const finishedRef = useRef(false);
+  const countsRef = useRef({ ...EMPTY_COUNTS });
+  const [roundNumber, setRoundNumber] = useState(1);
+  const [roundResults, setRoundResults] = useState(null);
   const [order, dispatchOrder] = useReducer(advanceOrder, INITIAL_ORDER);
   const customer = CUSTOMERS[order.customer];
   const [gameEnded, setGameEnded] = useState(false);
@@ -210,11 +215,12 @@ export function App() {
   }, [speakWithBrowser, voiceEnabled]);
 
   const recordMovement = useCallback((key, spokenLabel = MOVEMENT_LABELS[key]) => {
-    if (!key || !(key in MOVEMENT_LABELS) || gameEnded) return;
+    if (!key || !(key in MOVEMENT_LABELS) || finishedRef.current) return;
     const now = performance.now();
-    if (now - (lastMovementAtRef.current[key] || 0) < 750) return;
+    if (now - (lastMovementAtRef.current[key] ?? -Infinity) < 750) return;
     lastMovementAtRef.current[key] = now;
-    setMovementCounts((counts) => ({ ...counts, [key]: counts[key] + 1 }));
+    countsRef.current = { ...countsRef.current, [key]: countsRef.current[key] + 1 };
+    setMovementCounts(countsRef.current);
     dispatchOrder({ key });
     speakMovement(spokenLabel);
   }, [gameEnded, speakMovement]);
@@ -604,6 +610,7 @@ export function App() {
   }, [clearToastSoon, nearMachine]);
 
   const requestCoachDecision = useCallback(async (counts) => {
+    const requestedRound = roundRef.current;
     const leastUsed = Object.entries(counts).sort(([, a], [, b]) => a - b)[0]?.[0] || "leanLeft";
     const fallback = {
       source: "local",
@@ -620,21 +627,24 @@ export function App() {
       });
       if (!response.ok) throw new Error("Coach unavailable");
       const decision = await response.json();
-      setCoachDecision(decision);
+      if (requestedRound === roundRef.current) setCoachDecision(decision);
     } catch {
-      setCoachDecision(fallback);
+      if (requestedRound === roundRef.current) setCoachDecision(fallback);
     } finally {
-      setCoachLoading(false);
+      if (requestedRound === roundRef.current) setCoachLoading(false);
     }
   }, [pet?.name]);
 
   const finishMorning = useCallback(() => {
-    if (gameEnded) return;
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    const counts = { ...countsRef.current };
+    setRoundResults({ round: roundRef.current, counts, served: order.served, total: Object.values(counts).reduce((a, b) => a + b, 0) });
     controlRef.current.x = 0;
     controlRef.current.z = 0;
     setGameEnded(true);
-    requestCoachDecision(movementCounts);
-  }, [gameEnded, movementCounts, requestCoachDecision]);
+    requestCoachDecision(counts);
+  }, [order.served, requestCoachDecision]);
 
   useEffect(() => {
     if (order.served !== CUSTOMERS.length || gameEnded) return undefined;
@@ -643,6 +653,18 @@ export function App() {
   }, [order.served, finishMorning, gameEnded]);
 
   const resetMorning = useCallback(() => {
+    roundRef.current += 1;
+    finishedRef.current = false;
+    countsRef.current = { ...EMPTY_COUNTS };
+    setRoundNumber(roundRef.current);
+    setRoundResults(null);
+    setCoachLoading(false);
+    activePoseMovementRef.current = null;
+    squatRef.current = { active: false, startedAt: 0 };
+    reachRef.current = { startedAt: 0, fired: false };
+    controlRef.current.x = 0;
+    controlRef.current.z = 0;
+    resetCalibration();
     setBrewCount(0);
     setMovementCounts(EMPTY_COUNTS);
     dispatchOrder({ type: 'reset' });
@@ -651,7 +673,7 @@ export function App() {
     lastMovementAtRef.current = {};
     setResetToken((value) => value + 1);
     clearToastSoon("A fresh morning begins");
-  }, [clearToastSoon]);
+  }, [clearToastSoon, resetCalibration]);
 
   const movementTotal = Object.values(movementCounts).reduce((sum, count) => sum + count, 0);
 
@@ -727,7 +749,7 @@ export function App() {
       </section>
 
       <section className="round-card" aria-label="Coffee tray">
-        <div><span>THE MORNING ROUND</span><strong>{order.served} / 4 customers · {movementTotal} moves</strong></div>
+        <div><span>MORNING ROUND {roundNumber}</span><strong>{order.served} / 4 customers · {movementTotal} moves</strong></div>
         <div className="cup-row" aria-label={`${order.served} of 4 customers served`}>
           {[0, 1, 2, 3].map((index) => <Coffee key={index} size={18} className={index < order.served ? "filled" : ""} />)}
         </div>
@@ -818,16 +840,16 @@ export function App() {
         </div>
       )}
 
-      {gameEnded && (
+      {gameEnded && roundResults && (
         <div className="welcome-backdrop">
           <section className="results-card" aria-labelledby="results-title">
             <div className="results-trophy"><Trophy size={24} /></div>
-            <div className="eyebrow">MORNING COMPLETE</div>
-            <h2 id="results-title">You made {movementTotal} movement{movementTotal === 1 ? "" : "s"}.</h2>
-            <p>{order.served} of {CUSTOMERS.length} customers served. {pet ? `${pet.name} followed every step.` : 'Every order was a little movement ritual.'}</p>
+            <div className="eyebrow">ROUND {roundResults.round} · {roundResults.served === CUSTOMERS.length ? 'MORNING COMPLETE' : 'ROUND FINISHED'}</div>
+            <h2 id="results-title">You made {roundResults.total} movement{roundResults.total === 1 ? "" : "s"}.</h2>
+            <p>{roundResults.served} of {CUSTOMERS.length} customers served. {pet ? `${pet.name} followed every step.` : 'Every order was a little movement ritual.'}</p>
             <div className="movement-results">
               {Object.entries(MOVEMENT_LABELS).map(([key, label]) => (
-                <div key={key}><span>{label}</span><strong>{movementCounts[key]}</strong></div>
+                <div key={key}><span>{label}</span><strong>{roundResults.counts[key]}</strong></div>
               ))}
             </div>
             <div className="coach-card">
@@ -844,7 +866,7 @@ export function App() {
             </div>
             <div className="results-actions">
               <button className="hatch-submit" onClick={resetMorning}><RotateCcw size={16} /> Play another morning</button>
-              <button className="secondary-result" onClick={() => { setGameEnded(false); setShowHatch(true); }}><PawPrint size={15} /> Change pet</button>
+              <button className="secondary-result" onClick={() => { resetMorning(); setShowHatch(true); }}><PawPrint size={15} /> New round + change pet</button>
             </div>
             <small className="ai-disclosure">When enabled, movement coaching and speech may be AI-generated. Browser voice is used when OpenAI speech is unavailable.</small>
           </section>
