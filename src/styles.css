@@ -512,6 +512,19 @@ label:focus-within {
   text-align: center;
 }
 
+.customer-card { position: absolute; top: 155px; left: 24px; width: 270px; padding: 20px; border: 1px solid #fff8e8; border-radius: 8px 24px; background: rgba(255,249,235,.96); color: #42503f; box-shadow: 0 12px 40px #35453122; }
+.customer-heading { display: flex; gap: 12px; align-items: center; margin-top: 15px; }
+.customer-monogram { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; color: #fff9eb; font: italic 24px Georgia; }
+.customer-heading h2 { margin: 0 0 3px; font: italic 26px Georgia; }
+.customer-card small { font-size: 10px; line-height: 1.6; color: #6b7763; }
+.customer-card h3 { margin: 15px 0 4px; font-size: 14px; }
+.customer-card p { margin: 0 0 15px; font: italic 13px Georgia; }
+.customer-card ol { padding: 0; list-style: none; display: grid; gap: 7px; }
+.customer-card li { display: flex; align-items: center; gap: 7px; padding: 10px 8px; border-radius: 8px; font-size: 10px; background: #ede9dc; opacity: .6; }
+.customer-card li.current { background: #e1e9d6; outline: 1px solid #8fa780; opacity: 1; }
+.customer-card li.done { opacity: 1; color: #5b7952; }
+.customer-card li strong { margin-left: auto; white-space: nowrap; }
+@media (max-width: 800px) { .customer-card { top: auto; bottom: 90px; left: 12px; width: min(255px, calc(100vw - 24px)); max-height: 42vh; overflow-y: auto; padding: 13px; } .customer-card li { padding: 7px; } .customer-heading { margin-top: 8px; } }
 .spinner { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

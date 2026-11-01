@@ -11,3 +11,5 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 Camera compatibility is a core requirement. Keep live webcam capture permissive (`video: true`), show specific recovery guidance for permission/device failures, and always preserve recorded-video upload as a first-class fallback because embedded preview browsers may not expose `getUserMedia`.
 
 Keep the camera `<video>` element mounted before calling `getUserMedia`; the stream must have an existing DOM target before startup completes.
+
+The player should be a detailed, articulated human barista, not a capsule/blob. Visiting customers queue and request ordered movement recipes; completed recipes serve customers and all four complete the round.

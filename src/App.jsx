@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { FilesetResolver, PoseLandmarker } from "@mediapipe/tasks-vision";
 import {
   Camera,
@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { CafeScene } from "./CafeScene.jsx";
+import { CUSTOMERS, INITIAL_ORDER, advanceOrder } from './orders.js';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -153,6 +154,8 @@ export function App() {
   const [toast, setToast] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [movementCounts, setMovementCounts] = useState(EMPTY_COUNTS);
+  const [order, dispatchOrder] = useReducer(advanceOrder, INITIAL_ORDER);
+  const customer = CUSTOMERS[order.customer];
   const [gameEnded, setGameEnded] = useState(false);
   const [coachDecision, setCoachDecision] = useState(null);
   const [coachLoading, setCoachLoading] = useState(false);
@@ -212,6 +215,7 @@ export function App() {
     if (now - (lastMovementAtRef.current[key] || 0) < 750) return;
     lastMovementAtRef.current[key] = now;
     setMovementCounts((counts) => ({ ...counts, [key]: counts[key] + 1 }));
+    dispatchOrder({ key });
     speakMovement(spokenLabel);
   }, [gameEnded, speakMovement]);
 
@@ -633,14 +637,15 @@ export function App() {
   }, [gameEnded, movementCounts, requestCoachDecision]);
 
   useEffect(() => {
-    if (brewCount !== 4 || gameEnded) return undefined;
+    if (order.served !== CUSTOMERS.length || gameEnded) return undefined;
     const timer = window.setTimeout(finishMorning, 900);
     return () => window.clearTimeout(timer);
-  }, [brewCount, finishMorning, gameEnded]);
+  }, [order.served, finishMorning, gameEnded]);
 
   const resetMorning = useCallback(() => {
     setBrewCount(0);
     setMovementCounts(EMPTY_COUNTS);
+    dispatchOrder({ type: 'reset' });
     setGameEnded(false);
     setCoachDecision(null);
     lastMovementAtRef.current = {};
@@ -652,7 +657,16 @@ export function App() {
 
   return (
     <main className="app-shell">
-      <CafeScene controlRef={controlRef} onProximity={setNearMachine} onBrew={brew} onMovement={recordMovement} pet={pet} resetToken={resetToken} />
+      <CafeScene controlRef={controlRef} onProximity={setNearMachine} onBrew={brew} onMovement={recordMovement} pet={pet} resetToken={resetToken} customerIndex={order.customer} gameEnded={gameEnded} />
+
+      {!showWelcome && !gameEnded && customer && <section className="customer-card" aria-label="Customer request" aria-live="polite">
+        <div className="eyebrow">ORDER {order.customer + 1} / {CUSTOMERS.length} · {order.served} SERVED</div>
+        <div className="customer-heading"><span className="customer-monogram" style={{ background: customer.color }}>{customer.name[0]}</span><div><h2>{customer.name}</h2><small>{customer.title}</small></div></div>
+        <h3>{customer.drink}</h3><p>“{customer.request}”</p>
+        <ol>{customer.steps.map((step, index) => <li key={index} className={index < order.step ? 'done' : index === order.step ? 'current' : ''}><span>{index < order.step ? '✓' : index + 1}</span>{step.label}<strong>{index < order.step ? step.count : index === order.step ? order.reps : 0}/{step.count}</strong></li>)}</ol>
+        {sourceType !== 'none' && <p>{calibrationState === 'ready' ? gesture : 'Stand still in frame to calibrate.'}</p>}
+        {showHelp && <small>Complete in order. Return to neutral between repetitions.<br />Keyboard: A / D lean · W / S step · Space squat · E serve</small>}
+      </section>}
 
       <header className="brand-lockup">
         <div className="brand-kicker">COFFEE FOR A MOVING WORLD</div>
@@ -663,7 +677,7 @@ export function App() {
         </button>
       </header>
 
-      {showHelp && sourceType !== "none" && (
+      {showHelp && sourceType !== "none" && !customer && (
         <MotionGuide gesture={gesture} calibrationState={calibrationState} controlValues={controlValues} />
       )}
 
@@ -713,15 +727,15 @@ export function App() {
       </section>
 
       <section className="round-card" aria-label="Coffee tray">
-        <div><span>THE MORNING ROUND</span><strong>{brewCount} / 4 coffees · {movementTotal} moves</strong></div>
-        <div className="cup-row" aria-label={`${brewCount} of 4 coffees brewed`}>
-          {[0, 1, 2, 3].map((index) => <Coffee key={index} size={18} className={index < brewCount ? "filled" : ""} />)}
+        <div><span>THE MORNING ROUND</span><strong>{order.served} / 4 customers · {movementTotal} moves</strong></div>
+        <div className="cup-row" aria-label={`${order.served} of 4 customers served`}>
+          {[0, 1, 2, 3].map((index) => <Coffee key={index} size={18} className={index < order.served ? "filled" : ""} />)}
         </div>
       </section>
 
       <div className="bottom-controls">
         <button className={`primary-action ${nearMachine ? "is-ready" : ""}`} onClick={() => { controlRef.current.interactToken += 1; recordMovement("interact", "Raise a hand"); }}>
-          <Hand size={18} /><span>{nearMachine ? "Raise hand · brew coffee" : "Find the glowing machine"}</span>
+          <Hand size={18} /><span>Raise hand · serve order</span>
         </button>
         <button className="pill-action" onClick={() => { controlRef.current.jumpToken += 1; recordMovement("jump", "Squat and rise"); }}><Sparkles size={16} /> Jump</button>
         <button className="pill-action" aria-pressed={voiceEnabled} onClick={() => setVoiceEnabled((value) => !value)}>
@@ -741,7 +755,7 @@ export function App() {
             <div className="welcome-icon"><Maximize2 size={23} /></div>
             <div className="eyebrow">A LITTLE MOTION EXPERIMENT</div>
             <h2 id="welcome-title">Move your body.<br />Brew a quiet morning.</h2>
-            <p>Use a live webcam or a recorded video. Pose tracking happens on this device; your footage is not uploaded.</p>
+            <p>Four neighbours, four coffee orders. Follow each customer's movement recipe to serve them. Use a webcam or recorded video; your footage stays on this device.</p>
             <div className="source-choice-grid">
               <button className="source-choice" onClick={startCamera} disabled={cameraStarting}>
                 {cameraStarting ? <LoaderCircle className="spinner" size={22} /> : <Camera size={22} />}
@@ -810,7 +824,7 @@ export function App() {
             <div className="results-trophy"><Trophy size={24} /></div>
             <div className="eyebrow">MORNING COMPLETE</div>
             <h2 id="results-title">You made {movementTotal} movement{movementTotal === 1 ? "" : "s"}.</h2>
-            <p>{pet ? `${pet.name} followed every step.` : "A quiet little workout, tucked inside a coffee run."}</p>
+            <p>{order.served} of {CUSTOMERS.length} customers served. {pet ? `${pet.name} followed every step.` : 'Every order was a little movement ritual.'}</p>
             <div className="movement-results">
               {Object.entries(MOVEMENT_LABELS).map(([key, label]) => (
                 <div key={key}><span>{label}</span><strong>{movementCounts[key]}</strong></div>

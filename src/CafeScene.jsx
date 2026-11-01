@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { CUSTOMERS } from './orders.js';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -100,7 +101,7 @@ function createCafeWorld(scene) {
   return { machinePosition: new THREE.Vector3(0, 0, -2.9), glow };
 }
 
-function createAvatar(scene) {
+function createAvatar(scene, appearance = {}) {
   const avatar = new THREE.Group();
   const shadow = new THREE.Mesh(
     new THREE.CircleGeometry(0.7, 24),
@@ -110,30 +111,47 @@ function createAvatar(scene) {
   shadow.position.y = 0.025;
   avatar.add(shadow);
 
-  const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.5, 0.65, 6, 14),
-    new THREE.MeshStandardMaterial({ color: 0x88a6c9, roughness: 0.72 }),
-  );
-  body.position.y = 1.05;
-  body.castShadow = true;
+  const body = new THREE.Group();
   avatar.add(body);
-
-  const face = addBox(avatar, [0.82, 0.52, 0.12], [0, 1.24, -0.45], 0x273746, { roughness: 0.38 });
-  face.rotation.x = -0.03;
-  [-0.22, 0.22].forEach((x) => {
-    const eye = new THREE.Mesh(
-      new THREE.SphereGeometry(0.055, 10, 8),
-      new THREE.MeshBasicMaterial({ color: 0xfff4d9 }),
-    );
-    eye.position.set(x, 1.27, -0.525);
-    avatar.add(eye);
+  const skin = appearance.skin || 0xd8a27d;
+  const hair = appearance.hair || 0x3c2b24;
+  const shirt = appearance.color || 0xf1e5cd;
+  addBox(body, [0.66, 0.73, 0.38], [0, 1.16, 0], shirt);
+  addCylinder(body, 0.12, 0.12, 0.18, [0, 1.58, 0], skin);
+  addBox(body, [0.48, 0.53, 0.43], [0, 1.92, 0], skin);
+  addBox(body, [0.53, 0.17, 0.48], [0, 2.19, 0.025], hair);
+  addBox(body, [0.11, 0.32, 0.45], [-0.23, 2.06, 0.04], hair);
+  addBox(body, [0.53, 0.27, 0.10], [0, 2.07, 0.23], hair);
+  [-0.28, 0.28].forEach(x => addBox(body, [0.09, 0.16, 0.14], [x, 1.93, 0], skin));
+  [-0.12, 0.12].forEach(x => {
+    addBox(body, [0.055, 0.07, 0.03], [x, 1.98, -0.23], 0x302c29);
+    addBox(body, [0.09, 0.025, 0.03], [x, 2.06, -0.23], hair);
   });
-
-  const tray = addBox(avatar, [1.1, 0.1, 0.75], [0, 0.82, -0.82], 0xc69b67, { roughness: 0.84 });
-  tray.rotation.x = -0.06;
+  addBox(body, [0.085, 0.10, 0.10], [0, 1.92, -0.25], skin);
+  addBox(body, [0.12, 0.025, 0.025], [0, 1.80, -0.23], 0x915c49);
+  const legs = [], arms = [];
+  [-1, 1].forEach(side => {
+    const leg = new THREE.Group(); leg.position.set(side * 0.18, 0.81, 0); body.add(leg);
+    addBox(leg, [0.25, 0.62, 0.28], [0, -0.30, 0], 0x3c4945);
+    addBox(leg, [0.28, 0.17, 0.45], [0, -0.63, -0.08], 0x49352b); legs.push(leg);
+    const arm = new THREE.Group(); arm.position.set(side * 0.43, 1.46, 0); body.add(arm);
+    addBox(arm, [0.21, 0.36, 0.27], [0, -0.16, 0], shirt);
+    addBox(arm, [0.16, 0.29, 0.18], [0, -0.46, 0], skin);
+    addBox(arm, [0.19, 0.17, 0.21], [0, -0.65, -0.02], skin); arms.push(arm);
+  });
+  if (!appearance.color) {
+    addBox(body, [0.52, 0.8, 0.06], [0, 1.05, -0.225], 0x536e59);
+    [-0.20, 0.20].forEach(x => addBox(body, [0.07, 0.34, 0.06], [x, 1.43, -0.22], 0x536e59));
+    addBox(body, [0.28, 0.17, 0.04], [0, 1.02, -0.27], 0x80917a);
+    addBox(body, [0.14, 0.065, 0.03], [0.14, 1.32, -0.27], 0xf2d79e);
+    addCylinder(body, 0.33, 0.34, 0.13, [0, 2.28, 0.03], 0x536e59);
+  } else {
+    addBox(body, [0.16, 0.42, 0.09], [0.12, 1.40, -0.24], 0xe5c58b);
+    addBox(body, [0.42, 0.38, 0.18], [0.35, 0.88, 0.14], 0x9b714b);
+  }
   avatar.position.set(0, 0, 3.65);
   scene.add(avatar);
-  return { avatar, body, shadow };
+  return { avatar, body, shadow, legs, arms };
 }
 
 function createPet(scene, pet) {
@@ -195,9 +213,11 @@ function createPet(scene, pet) {
   return companion;
 }
 
-export function CafeScene({ controlRef, onProximity, onBrew, onMovement, pet, resetToken }) {
+export function CafeScene({ controlRef, onProximity, onBrew, onMovement, pet, resetToken, customerIndex, gameEnded }) {
   const mountRef = useRef(null);
   const callbacksRef = useRef({ onProximity, onBrew, onMovement });
+  const orderRef = useRef({ customerIndex, gameEnded });
+  orderRef.current = { customerIndex, gameEnded };
 
   useEffect(() => {
     callbacksRef.current = { onProximity, onBrew, onMovement };
@@ -235,11 +255,18 @@ export function CafeScene({ controlRef, onProximity, onBrew, onMovement, pet, re
     scene.add(sun);
 
     const { machinePosition, glow } = createCafeWorld(scene);
-    const { avatar, body, shadow } = createAvatar(scene);
+    const { avatar, body, shadow, legs, arms } = createAvatar(scene);
+    const customers = CUSTOMERS.map((customer, index) => {
+      const person = createAvatar(scene, customer);
+      person.avatar.position.set(7 + index * 1.2, 0, 2.7);
+      person.avatar.scale.setScalar(0.9);
+      return person;
+    });
     const companion = createPet(scene, pet);
 
     const keys = new Set();
     const keyDown = (event) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(event.target.tagName) || orderRef.current.gameEnded) return;
       keys.add(event.key.toLowerCase());
       if ([" ", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(event.key.toLowerCase())) event.preventDefault();
       if (!event.repeat && event.key === " ") {
@@ -292,6 +319,7 @@ export function CafeScene({ controlRef, onProximity, onBrew, onMovement, pet, re
       if (keys.has("d") || keys.has("arrowright")) moveX = 1;
       if (keys.has("w") || keys.has("arrowup")) moveZ = 1;
       if (keys.has("s") || keys.has("arrowdown")) moveZ = -1;
+      if (orderRef.current.gameEnded) { moveX = 0; moveZ = 0; keys.clear(); }
 
       const speed = 3.25;
       avatar.position.x = clamp(avatar.position.x + moveX * speed * dt, -5.65, 5.65);
@@ -307,7 +335,26 @@ export function CafeScene({ controlRef, onProximity, onBrew, onMovement, pet, re
 
       const moving = Math.abs(moveX) + Math.abs(moveZ) > 0.08;
       body.rotation.z = THREE.MathUtils.lerp(body.rotation.z, moving ? -moveX * 0.14 : 0, 0.12);
-      body.position.y = 1.05 + (moving ? Math.sin(time * 0.012) * 0.06 : Math.sin(time * 0.0022) * 0.025);
+      body.position.y = moving ? Math.sin(time * 0.012) * 0.035 : Math.sin(time * 0.0022) * 0.015;
+      legs.forEach((leg, i) => { leg.rotation.x = moving ? Math.sin(time * 0.012 + i * Math.PI) * 0.55 : 0; });
+      arms.forEach((arm, i) => { arm.rotation.x = moving ? -Math.sin(time * 0.012 + i * Math.PI) * 0.35 : 0; });
+      if (moving) avatar.rotation.y = Math.atan2(-moveX, moveZ);
+      customers.forEach((person, index) => {
+        const active = orderRef.current.customerIndex;
+        const targetX = index < active ? 9 : index === active ? 1.8 : 4.8;
+        const targetZ = index < active ? 4.5 : index === active ? -1.4 : 0.1 + (index - active) * 1.05;
+        const dx = targetX - person.avatar.position.x, dz = targetZ - person.avatar.position.z;
+        const distance = Math.hypot(dx, dz), walking = distance > 0.06;
+        if (walking) {
+          const step = Math.min(distance, dt * 1.7);
+          person.avatar.position.x += dx / distance * step;
+          person.avatar.position.z += dz / distance * step;
+          person.avatar.rotation.y = Math.atan2(-dx, -dz);
+        } else person.avatar.rotation.y = index === active ? Math.PI : 0;
+        person.legs.forEach((leg, i) => { leg.rotation.x = walking ? Math.sin(time * 0.010 + i * Math.PI) * 0.5 : 0; });
+        person.arms.forEach((arm, i) => { arm.rotation.x = walking ? -Math.sin(time * 0.010 + i * Math.PI) * 0.3 : 0; });
+        person.avatar.visible = index >= active || person.avatar.position.x < 8;
+      });
       shadow.material.opacity = 0.18 - Math.min(avatar.position.y * 0.09, 0.11);
 
       if (companion) {
